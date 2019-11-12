@@ -1,0 +1,6 @@
+; Memory initialization file
+; depth=16, width=32
+memory_initialization_radix=2;
+memory_initialization_vector=
+11111100000000000000000001111001,
+00000000000000000000000000000000;
