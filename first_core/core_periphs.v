@@ -3,10 +3,11 @@
 `include "common_params.h"
 
 module core_periphs
-  #(parameter ACTUAL_ADDR_W       =32,
-    parameter INIT_PROGRAM_COUNTER= 0,
-    parameter INIT_POINTER        = 0,
-    parameter HIGH_POINTER        =10)
+  #(parameter ACTUAL_ADDR_W        =32,
+    parameter INIT_PROGRAM_COUNTER = 0,
+    parameter INIT_POINTER         = 0,
+    parameter HIGH_POINTER         =10,
+    parameter DEBUG_IGNORE_IN_BUSY =1'b0)
    (
     // BRAM_PORTA
     // データメモリ用
@@ -70,12 +71,14 @@ module core_periphs
     input wire clk,
     input wire rstn);
 
-  wire              out_req;
-  wire [`REG_W-1:0] out_data;
-
-  wire in_busy, out_busy;
-
-  wire [`ADDR_W-1:0] i_pointer;
+  wire               out_req;
+  wire [`REG_W -1:0] out_data;
+  wire               in_busy;
+  wire               out_busy;
+  wire [`ADDR_W-1:0] pointer;
+  wire [`ADDR_W-1:0] pc;
+  wire [`ADDR_W-1:0] mem_addr_core;
+  wire [`ADDR_W-1:0] mem_addr_io;
 
   // BRAMに関して.
   // 下位モジュールで操作しないワイヤはここで済ます. 
@@ -93,37 +96,40 @@ module core_periphs
   assign bram_regce_a   =   0;
   assign bram_regce_b   =   0;
   assign bram_regce_c   =   0;
+  assign bram_addr_a    = mem_addr_core[ACTUAL_ADDR_W-1:0];
+  assign bram_addr_b    =            pc[ACTUAL_ADDR_W-1:0];
+  assign bram_addr_c    = mem_addr_io  [ACTUAL_ADDR_W-1:0];
 
   core
   #(ACTUAL_ADDR_W,INIT_PROGRAM_COUNTER,INIT_POINTER,HIGH_POINTER) cpu1 (
-    .mem_addr_for_output(bram_addr_a),
-    .st_data            (bram_wrdata_a),
-    .ld_data            (bram_rddata_a),
-    .write_enable       (bram_we_a),
-    .pc_for_output      (bram_addr_b),
-    .inst               (bram_rddata_b),
+    .mem_addr     (mem_addr_core),
+    .st_data      (bram_wrdata_a),
+    .ld_data      (bram_rddata_a),
+    .write_enable (bram_we_a),
+    .pc           (pc),
+    .inst         (bram_rddata_b),
 
     .out_req      (out_req),
     .out_data     (out_data),
     .in_busy      (in_busy),
     .out_busy     (out_busy),
-    .file_pointer (i_pointer),
+    .file_pointer (pointer),
 
     .clk          (clk),
     .rstn         (rstn)
   );
 
   io_controller
-  #(ACTUAL_ADDR_W,INIT_POINTER,HIGH_POINTER) io_cont1 (
+  #(ACTUAL_ADDR_W,INIT_POINTER,HIGH_POINTER,DEBUG_IGNORE_IN_BUSY) io_cont1 (
     .out_req  (out_req),
     .out_data (out_data),
     .out_busy (out_busy),
     .in_busy  ( in_busy),
-    .consumer_pointer(i_pointer),
+    .consumer_pointer(pointer),
 
-    .mem_addr_for_output(bram_addr_c),
-    .mem_data           (bram_wrdata_c),
-    .mem_we             (bram_we_c),
+    .mem_addr     (mem_addr_io),
+    .mem_data     (bram_wrdata_c),
+    .mem_we       (bram_we_c),
 
     .axi_awvalid  (axi_awvalid),
     .axi_awready  (axi_awready),

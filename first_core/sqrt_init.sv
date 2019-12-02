@@ -1,5 +1,7 @@
+`default_nettype none
+
 module sqrt_init_m (
-    input wire [6:0] m,
+    input  wire [6:0] m,
     output wire [5:0] m_ );
 
     function [5:0] f(input [6:0] in);
@@ -142,14 +144,8 @@ module sqrt_init_m (
 endmodule
 
 module sqrt_init (
-    input wire [31:0] x,
-    output wire [31:0] y,
-    input wire ready,
-    output wire valid,
-    input wire clk,
-    input wire rstn );
-
-    assign valid = ready;
+    input  wire [31:0] x,
+    output wire [31:0] y);
 
     wire s = x[31];
     wire [7:0] e = x[30:23];
@@ -166,3 +162,5 @@ module sqrt_init (
     assign y = {ys, ye, ym};
 
 endmodule
+
+`default_nettype wire

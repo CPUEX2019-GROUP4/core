@@ -7,21 +7,21 @@ module core
     parameter INIT_POINTER          =  0,
     parameter HIGH_POINTER          = 10)
    (
-    output reg  [ACTUAL_ADDR_W-1:0]  mem_addr_for_output,
-    output reg  [`WORD_W-1:0]        st_data,
-    input  wire [`WORD_W-1:0]        ld_data,
-    output reg                       write_enable,
+    output reg  [`ADDR_W-1:0]  mem_addr,
+    output reg  [`WORD_W-1:0]  st_data,
+    input  wire [`WORD_W-1:0]  ld_data,
+    output reg                 write_enable,
 
-    output reg  [ACTUAL_ADDR_W-1:0]  pc_for_output,
-    input  wire [`WORD_W-1:0]        inst,
+    output reg  [`ADDR_W-1:0]  pc,
+    input  wire [`WORD_W-1:0]  inst,
 
-    output reg                       out_req,
-    output reg [`REG_W-1:0]          out_data,
+    output reg                 out_req,
+    output reg [`REG_W-1:0]    out_data,
 
-    input wire                       in_busy,
-    input wire                       out_busy,
+    input wire                 in_busy,
+    input wire                 out_busy,
 
-    output reg [`ADDR_W-1:0]         file_pointer,
+    output reg [`ADDR_W-1:0]   file_pointer,
 
     input wire clk,
     input wire rstn);
@@ -40,8 +40,7 @@ module core
   localparam s_mem_access = 4'd5;
   localparam s_write_back = 4'd6;
 
-  reg  [`ADDR_W       -1:0] pc;
-  reg  [`ADDR_W       -1:0] mem_addr;
+  reg  [31:0] counter;
 
   // FDレジスタ
   reg  [`ADDR_W       -1:0] fd_pc;
@@ -130,8 +129,6 @@ module core
   reg [`REG_W-1:0] gpr [(2**`REG_ADDR_W)-1:0];
   reg [`REG_W-1:0] fpr [(2**`REG_ADDR_W)-1:0];
   reg              fpu_cond_reg;
-  reg [(2**`REG_ADDR_W)-1:0] gpr_read, gpr_write;
-  reg [(2**`REG_ADDR_W)-1:0] fpr_read, fpr_write;
 
   integer i; // for文を回すための変数
 
@@ -208,9 +205,6 @@ module core
   *
   *********************************************/
 
-  assign pc_for_output = pc[ACTUAL_ADDR_W-1:0];
-  assign mem_addr_for_output = mem_addr[ACTUAL_ADDR_W-1:0];
-
   /*********************************************
   *                                            
   *         順序回路を記述するとこ
@@ -221,6 +215,8 @@ module core
     if (~rstn) begin // リセット
       state           <= s_wait;
       pc              <= 0;
+
+      counter         <= 0;
 
       st_data         <= 0;
       mem_addr        <= 0;
@@ -269,18 +265,12 @@ module core
         fpr[i] <= 0;
       end
       fpu_cond_reg    <= 0;
-
-      gpr_read        <= 0;
-      gpr_write       <= 0;
-      fpr_read        <= 0;
-      fpr_write       <= 0;
     end else begin 
       /****************************************************
       *
       *        ここからステートマシンの動き
       *
       ****************************************************/
-      (* full_case *)
       case ( state )
         /*******************
         *   WAIT PHASE     *
@@ -298,6 +288,8 @@ module core
           // fetchした命令をFDレジスタに入れておく.
           fd_inst <= inst;
           state   <= s_decode;
+
+          counter <= counter+1;
         end
         /******************
         *  DECODE PHASE   *
@@ -355,8 +347,9 @@ module core
 
           // [{(opcode=IN)⇒(~in_busy)}∧{(opcode=OUT)⇒(~out_busy)}]
           // と同値であることに注意.
-          if ((de_opcode!=`OPCODE_ININT ||(~ in_busy)) &&
-              (de_opcode!=`OPCODE_INFLT ||(~ in_busy)) &&
+
+          if ((de_opcode!=`OPCODE_ININT ||( ~in_busy)) &&
+              (de_opcode!=`OPCODE_INFLT ||( ~in_busy)) &&
               (de_opcode!=`OPCODE_OUT   ||(~out_busy)))
           begin
             state     <= s_mem_access;

@@ -1,6 +1,8 @@
+`default_nettype none
+
 module ftoi (
-  input wire [31:0] x,
-  output reg [31:0] y
+  input  wire [31:0] x,
+  output wire [31:0] y
 );
 
   wire        s = x[31:31];
@@ -26,3 +28,5 @@ module ftoi (
               : ans);
 
 endmodule
+
+`default_nettype wire

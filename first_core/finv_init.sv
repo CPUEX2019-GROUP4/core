@@ -1,5 +1,7 @@
+`default_nettype none
+
 module finv_init_m (
-    input wire [5:0] m,
+    input  wire [5:0] m,
     output wire [5:0] m_ );
 
     function [5:0] f(input [5:0] in);
@@ -78,27 +80,24 @@ module finv_init_m (
 endmodule
 
 module finv_init (
-    input wire [31:0] x,
-    output wire [31:0] y,
-    input wire ready,
-    output wire valid,
-    input wire clk,
-    input wire rstn );
+  input  wire [31:0] x,
+  output wire [31:0] y
+);
 
-    assign valid = ready;
+  wire s = x[31];
+  wire [7:0] e = x[30:23];
+  wire [22:0] m = x[22:0];
 
-    wire s = x[31];
-    wire [7:0] e = x[30:23];
-    wire [22:0] m = x[22:0];
+  wire ys = s;
+  wire [7:0] ye = 8'd253 - e + (m[22:17] == '0 ? 8'd1 : 8'd0); // Nobody cares big number!!
+  wire [22:0] ym;
 
-    wire ys = s;
-    wire [7:0] ye = 8'd253 - e + (m[22:17] == '0 ? 8'd1 : 8'd0); // Nobody cares big number!!
-    wire [22:0] ym;
+  finv_init_m finv_init_m0 (m[22:17], ym[22:17]);
 
-    finv_init_m finv_init_m0 (m[22:17], ym[22:17]);
+  assign ym[16:0] = '0;
 
-    assign ym[16:0] = '0;
-
-    assign y = {ys, ye, ym};
+  assign y = e == '0 ? 32'b0 : {ys, ye, ym};
 
 endmodule
+
+`default_nettype wire

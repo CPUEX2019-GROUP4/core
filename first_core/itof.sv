@@ -1,6 +1,8 @@
+`default_nettype none
+
 module itof (
-  input wire [31:0] x,
-  output reg [31:0] y
+  input  wire [31:0] x,
+  output wire [31:0] y
 );
 
   wire [31:0] abs_x = x[31] ? (~x + 32'b1) : x;
@@ -49,3 +51,5 @@ module itof (
   assign y = {s, e, m};
 
 endmodule
+
+`default_nettype wire

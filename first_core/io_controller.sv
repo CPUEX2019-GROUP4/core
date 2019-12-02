@@ -4,400 +4,478 @@
 module io_controller
   #(parameter ACTUAL_ADDR_W= 32,
     parameter INIT_POINTER =  0,
-    parameter HIGH_POINTER = 10)
+    parameter HIGH_POINTER = 10,
+    parameter DEBUG_IGNORE_IN_BUSY = 1'b0)
    (
     input wire                out_req,
     input wire [`WORD_W-1:0]  out_data,
     input wire [`ADDR_W-1:0]  consumer_pointer,
-    output reg                 in_busy,
-    output reg                out_busy,
+    output wire                in_busy,
+    output wire               out_busy,
     
     // BRAM PORT A
-    output reg  [ACTUAL_ADDR_W-1:0]  mem_addr_for_output,
-    output reg  [`WORD_W-1:0]        mem_data,
-    output reg                       mem_we,
+    output wire [`ADDR_W-1:0]  mem_addr,
+    output wire [`WORD_W-1:0]  mem_data,
+    output wire                mem_we,
 
     // I/O via AXI4
     // AXI4-lite master memory interface
     // address write channel
-    output reg            axi_awvalid,
+    output wire           axi_awvalid,
     input wire            axi_awready,
-    output reg [31:0]     axi_awaddr,
-    output reg [2:0]      axi_awprot,
+    output wire[31:0]     axi_awaddr,
+    output wire[2:0]      axi_awprot,
     // data write channel
-    output reg            axi_wvalid,
+    output wire           axi_wvalid,
     input wire            axi_wready,
-    output reg [31:0]     axi_wdata,
-    output reg [3:0]      axi_wstrb,
+    output wire[31:0]     axi_wdata,
+    output wire[3:0]      axi_wstrb,
     // response channel
     input wire            axi_bvalid,
-    output reg            axi_bready,
+    output wire           axi_bready,
     input wire [1:0]      axi_bresp,
     // address read channel
-    output reg            axi_arvalid,
+    output wire           axi_arvalid,
     input wire            axi_arready,
-    output reg [31:0]     axi_araddr,
-    output reg [2:0]      axi_arprot,
+    output wire[31:0]     axi_araddr,
+    output wire[2:0]      axi_arprot,
     // read data channel
     input wire            axi_rvalid,
-    output reg            axi_rready,
+    output wire           axi_rready,
     input wire [31:0]     axi_rdata,
     input wire [1:0]      axi_rresp,
     
     input wire clk,
     input wire rstn);
 
-  // データメモリアクセス用
-  reg [`ADDR_W-1:0] producer_pointer;
-  reg [`ADDR_W-1:0] mem_addr;
+  wire [31:0] stat_reg;      // ステータスレジスタの情報を保持
+  wire        stat_reg_new;
 
-  wire in_module_busy, out_module_busy;
+  io_data_in #(
+    INIT_POINTER,
+    HIGH_POINTER,
+    DEBUG_IGNORE_IN_BUSY
+  ) io_data_in_1 (
+    .axi_arvalid      (axi_arvalid),
+    .axi_arready      (axi_arready),
+    .axi_araddr       (axi_araddr),
+    .axi_arprot       (axi_arprot),
+    .axi_rvalid       (axi_rvalid),
+    .axi_rready       (axi_rready),
+    .axi_rdata        (axi_rdata),
+    .axi_rresp        (axi_rresp),
+    .consumer_pointer (consumer_pointer),
+    .stat_reg         (stat_reg),
+    .stat_reg_new     (stat_reg_new),
+    .mem_addr         (mem_addr),
+    .mem_data         (mem_data),
+    .mem_we           (mem_we),
+    .in_busy          (in_busy),
+    .clk              (clk),
+    .rstn             (rstn)
+  );
 
-  reg         in_axi_arvalid, out_axi_arvalid;
-  reg         in_axi_rready,  out_axi_rready;
-  reg [31:0]  in_axi_araddr,  out_axi_araddr;
+  io_data_out io_data_out_1 (
+    .axi_awvalid  (axi_awvalid),
+    .axi_awready  (axi_awready),
+    .axi_awaddr   (axi_awaddr),
+    .axi_awprot   (axi_awprot),
+    .axi_wvalid   (axi_wvalid),
+    .axi_wready   (axi_wready),
+    .axi_wdata    (axi_wdata),
+    .axi_wstrb    (axi_wstrb),
+    .axi_bvalid   (axi_bvalid),
+    .axi_bready   (axi_bready),
+    .axi_bresp    (axi_bresp),
+    .stat_reg     (stat_reg),
+    .stat_reg_new (stat_reg_new),
+    .out_req      (out_req),
+    .out_data     (out_data),
+    .out_busy     (out_busy),
+    .clk          (clk),
+    .rstn         (rstn)
+  );
 
-  in_module
-  #(INIT_POINTER,HIGH_POINTER) in_mod1
-  (.in_module_busy  (in_module_busy),
-   .interrupt       (out_module_busy | out_req),
-   .producer_pointer(producer_pointer),
-   .mem_data        (mem_data),
-   .mem_addr        (mem_addr),
-   .mem_we          (mem_we),
-   .axi_arready     (axi_arready),
-   .axi_rvalid      (axi_rvalid),
-   .axi_rdata       (axi_rdata),
-   .in_axi_arvalid  (in_axi_arvalid),
-   .in_axi_rready   (in_axi_rready),
-   .in_axi_araddr   (in_axi_araddr),
-   .clk             (clk),
-   .rstn            (rstn));
-
-  out_module out_mod1
-  (.out_module_busy (out_module_busy),
-   .interrupt       (in_module_busy),
-   .out_req         (out_req),
-   .out_data        (out_data),
-   .axi_arready     (axi_arready),
-   .axi_rvalid      (axi_rvalid),
-   .axi_rdata       (axi_rdata),
-   .out_axi_arvalid (out_axi_arvalid),
-   .out_axi_rready  (out_axi_rready),
-   .out_axi_araddr  (out_axi_araddr),
-   .axi_awready     (axi_awready),
-   .axi_awvalid     (axi_awvalid),
-   .axi_awaddr      (axi_awaddr),
-   .axi_wready      (axi_wready),
-   .axi_wvalid      (axi_wvalid),
-   .axi_wdata       (axi_wdata),
-   .axi_bvalid      (axi_bvalid),
-   .axi_bready      (axi_bready),
-   .clk             (clk),
-   .rstn            (rstn));
-
-  assign mem_addr_for_output = mem_addr;
-  assign  in_busy =  (consumer_pointer==producer_pointer);
-  assign out_busy = out_module_busy;
-
-  assign axi_rready  = in_axi_rready  ^ out_axi_rready;
-  assign axi_arvalid = in_axi_arvalid ^ out_axi_arvalid;
-  assign axi_araddr  =(in_module_busy) ? in_axi_araddr:out_axi_araddr;
-
-  assign axi_arprot  = 0;
-  assign axi_awprot  = 0;
-  assign axi_wstrb   = 0;
-  
 endmodule
 
-module out_module
-   (
-    output reg  out_module_busy,
-    input wire  interrupt,
+module io_data_out (
+  output reg               axi_awvalid,
+  input wire               axi_awready,
+  output reg [31:0]        axi_awaddr,
+  output reg [2:0]         axi_awprot,
+  // data write channel
+  output reg               axi_wvalid,
+  input wire               axi_wready,
+  output reg [31:0]        axi_wdata,
+  output reg [3:0]         axi_wstrb,
+  // response channel
+  input wire               axi_bvalid,
+  output reg               axi_bready,
+  input wire [1:0]         axi_bresp,
 
-    input wire               out_req,
-    input wire [`WORD_W-1:0] out_data,
+  input wire [31:0]        stat_reg,
+  input wire               stat_reg_new,
 
-    input wire        axi_arready,
-    input wire        axi_rvalid,
-    input wire [31:0] axi_rdata,
+  input wire               out_req,
+  input wire [`WORD_W-1:0] out_data,
+  output wire              out_busy,
 
-    output reg        out_axi_arvalid,
-    output reg        out_axi_rready,
-    output reg [31:0] out_axi_araddr,
+  input wire               clk,
+  input wire               rstn
+);
+  localparam tx_fifo_addr = 32'd4;
 
-    input wire        axi_awready,
-    output reg        axi_awvalid,
-    output reg [31:0] axi_awaddr,
-    input wire        axi_wready,
-    output reg        axi_wvalid,
-    output reg [31:0] axi_wdata,
-    input wire        axi_bvalid,
-    output reg        axi_bready,
+  assign axi_awprot = 0;
+  assign axi_wstrb  = 0;
 
-    input wire clk,
-    input wire rstn);
+
+  enum {
+    OUT_INIT,
+    OUT_WAIT,
+    OUT_DATA_A,
+    OUT_DATA_B,
+    OUT_DATA_C1,
+    OUT_DATA_C2,
+    OUT_DATA_D,
+    OUT_DATA_E
+  } out_state;
+
+  reg [31:0] out_count;
+  wire       out_done;
   
-  reg [3:0]  out_state;
-  localparam out_wait           = 4'd1;
-  localparam out_read_status_a  = 4'd2;
-  localparam out_read_status_b  = 4'd3;
-  localparam out_read_status_c  = 4'd4;
-  localparam out_check_status   = 4'd5;
-  localparam out_write_data_a   = 4'd6;
-  localparam out_write_data_b   = 4'd7;
-  localparam out_write_data_c1  = 4'd8;
-  localparam out_write_data_c2  = 4'd9;
-  localparam out_write_data_d   = 4'd10;
+  assign out_done =  ((out_state==OUT_DATA_D) && (axi_bvalid));
+  assign out_busy = ~((out_state==OUT_DATA_A));
   
-  reg tx_fifo_empty;
-  reg [`WORD_W-1:0] out_data_reg;
-
-  assign out_module_busy = ~(out_state==out_wait);
-
-  always @(posedge clk)
-  begin
+  always @(posedge clk) begin
     if (~rstn) begin
-      out_state       <= out_wait;
-      axi_awvalid     <= 0;
-      axi_awaddr      <= 0;
-      axi_wvalid      <= 0;
-      axi_wdata       <= 0;
-      axi_bready      <= 0;
-      out_axi_rready  <= 0;
-      out_axi_arvalid <= 0;
-      out_axi_araddr  <= 0;
+      out_count <= 0;
+    end else if ((stat_reg[2:2])&&stat_reg_new&&out_done) begin
+      out_count <= 1;
+    end else if ((stat_reg[2:2])&&stat_reg_new) begin
+      out_count <= 0;
+    end else if (out_done) begin
+      out_count <= out_count + 1;
+    end
+  end
+
+  always @(posedge clk) begin
+    if (~rstn) begin
+      out_state   <= OUT_INIT;
+      axi_awvalid <= 0;
+      axi_awaddr  <= 0;
+      axi_wvalid  <= 0;
+      axi_wdata   <= 0;
+      axi_bready  <= 0;
     end else begin
-      (* full_case *)
       case (out_state)
-        /**************************
-        *        WAIT PHASE       *
-        **************************/
-        out_wait:
+        OUT_INIT:
+        begin
+          if (stat_reg_new&&(stat_reg[2:2])) begin
+            out_state <= OUT_WAIT;
+          end
+        end
+        OUT_WAIT:
+        begin
+          if (stat_reg_new&&(stat_reg[2:2])) begin
+            out_state <= OUT_DATA_A;
+          end
+        end
+        OUT_DATA_A:
         begin
           if (out_req) begin
-            out_data_reg  <= out_data;
-            out_state     <= out_read_status_a;
+            axi_wvalid  <= 1;
+            axi_awvalid <= 1;
+            axi_wdata   <= out_data;
+            axi_awaddr  <= tx_fifo_addr;
+            out_state   <= OUT_DATA_B;
           end
         end
-        /**************************
-        *    READ STATUS PHASE    *
-        **************************/
-        out_read_status_a:
-        begin
-          if (~interrupt) begin
-            out_axi_arvalid <= 1;
-            out_axi_araddr  <= 8;
-            out_state       <= out_read_status_b;
-          end
-        end
-        out_read_status_b:
-        begin
-          if (axi_arready) begin
-            out_axi_arvalid <= 0;
-            out_axi_rready  <= 1;
-            out_state       <= out_read_status_c;
-          end
-        end
-        out_read_status_c:
-        begin
-          if (axi_rvalid) begin
-            out_axi_rready  <= 0;
-            tx_fifo_empty   <= axi_rdata[2:2];
-            out_state       <= out_check_status;
-          end
-        end
-        /**************************
-        *   CHECK STATUS PHASE    *
-        **************************/
-        out_check_status:
-        begin
-          out_state   <= (tx_fifo_empty) ? out_write_data_a : out_read_status_a;
-        end
-        /**************************
-        *    WRITE DATA PHASE     *
-        **************************/
-        out_write_data_a:
-        begin
-          axi_wvalid  <= 1;
-          axi_awvalid <= 1;
-          axi_wdata   <= out_data_reg;
-          axi_awaddr  <= 4;
-          out_state   <= out_write_data_b;
-        end
-        out_write_data_b:
+        OUT_DATA_B:
         begin
           if (axi_wready&axi_awready) begin
             axi_wvalid  <= 0;
             axi_awvalid <= 0;
             axi_bready  <= 1;
-            out_state   <= out_write_data_d;
+            out_state   <= OUT_DATA_D;
           end else if (axi_wready) begin
             axi_wvalid  <= 0;
-            out_state   <= out_write_data_c1;
+            out_state   <= OUT_DATA_C1;
           end else if (axi_awready) begin
             axi_awvalid <= 0;
-            out_state   <= out_write_data_c2;
+            out_state   <= OUT_DATA_C2;
           end
         end
-        out_write_data_c1:
+        OUT_DATA_C1:
         begin
           if (axi_awready) begin
             axi_awvalid <= 0;
             axi_bready  <= 1;
-            out_state   <= out_write_data_d;
+            out_state   <= OUT_DATA_D;
           end
         end
-        out_write_data_c2:
+        OUT_DATA_C2:
         begin
           if (axi_wready) begin
             axi_wvalid  <= 0;
             axi_bready  <= 1;
-            out_state   <= out_write_data_d;
+            out_state   <= OUT_DATA_D;
           end
         end
-        out_write_data_d:
+        OUT_DATA_D:
         begin
           if (axi_bvalid) begin
             axi_bready  <= 0;
-            out_state     <= out_wait;
+            out_state   <= OUT_INIT;
           end
+        end
+        default:
+        begin
+          out_state <= OUT_INIT;
+        end
+      endcase
+    end
+  end
+
+endmodule
+
+module io_data_in #(
+  parameter INIT_POINTER         =    0,
+  parameter HIGH_POINTER         =   10,
+  parameter DEBUG_IGNORE_IN_BUSY = 1'b0
+) (
+  output wire              axi_arvalid,
+  input wire               axi_arready,
+  output wire[31:0]        axi_araddr,
+  output wire[2:0]         axi_arprot,
+  // read data channel
+  input wire               axi_rvalid,
+  output wire              axi_rready,
+  input wire [31:0]        axi_rdata,
+  input wire [1:0]         axi_rresp,
+
+  input wire [`ADDR_W-1:0] consumer_pointer,
+  output wire[31:0]        stat_reg,
+  output wire              stat_reg_new,
+  output wire[`ADDR_W-1:0] mem_addr,
+  output wire[`WORD_W-1:0] mem_data,
+  output wire              mem_we,
+  output wire              in_busy,
+  input wire               clk,
+  input wire               rstn
+);
+  wire [`WORD_W-1:0] mem_data_reg;
+  wire               mem_data_valid;
+
+  wire [`ADDR_W-1:0] prod_pointer;
+
+  assign in_busy =(DEBUG_IGNORE_IN_BUSY==1'b1) ? 0 : (consumer_pointer==prod_pointer);
+
+  io_data_fetch io_data_fetch_1 (
+    .axi_arvalid    (axi_arvalid),
+    .axi_arready    (axi_arready),
+    .axi_araddr     (axi_araddr),
+    .axi_arprot     (axi_arprot),
+    .axi_rvalid     (axi_rvalid),
+    .axi_rready     (axi_rready),
+    .axi_rdata      (axi_rdata),
+    .axi_rresp      (axi_rresp),
+    .stat_reg       (stat_reg),
+    .stat_reg_new   (stat_reg_new),
+    .mem_data_reg   (mem_data_reg),
+    .mem_data_valid (mem_data_valid),
+    .clk            (clk),
+    .rstn           (rstn)
+  );
+
+  io_data_store #(
+    INIT_POINTER,
+    HIGH_POINTER
+  ) io_data_store_1 (
+    .mem_data_reg   (mem_data_reg),
+    .mem_data_valid (mem_data_valid),
+    .prod_pointer   (prod_pointer),
+    .mem_addr       (mem_addr),
+    .mem_data       (mem_data),
+    .mem_we         (mem_we),
+    .clk            (clk),
+    .rstn           (rstn)
+  );
+endmodule
+
+module io_data_fetch (
+  output reg               axi_arvalid,
+  input wire               axi_arready,
+  output reg [31:0]        axi_araddr,
+  output reg [2:0]         axi_arprot,
+  // read data channel
+  input wire               axi_rvalid,
+  output reg               axi_rready,
+  input wire [31:0]        axi_rdata,
+  input wire [1:0]         axi_rresp,
+
+  output reg [31:0]        stat_reg,
+  output reg               stat_reg_new,
+  output reg [`WORD_W-1:0] mem_data_reg,
+  output reg               mem_data_valid,
+  
+  input wire clk,
+  input wire rstn
+);
+
+  localparam rx_fifo_addr  = 32'd0;
+  localparam stat_reg_addr = 32'd8;
+
+  assign axi_arprot = 0;
+
+  reg [ 1:0] data_position;
+
+  enum {
+    FETCH_WAIT,
+    FETCH_STATUS_A,
+    FETCH_STATUS_B,
+    FETCH_DATA_A,
+    FETCH_DATA_B,
+    FETCH_ARRANGE_DATA
+  } fetch_state;
+
+  always @(posedge clk) begin
+    if (~rstn) begin
+      fetch_state    <= FETCH_STATUS_A;
+      axi_arvalid    <= 0;
+      axi_rready     <= 0;
+      axi_araddr     <= 0;
+      mem_data_reg   <= 0;
+      mem_data_valid <= 0;
+      data_position  <= 0;
+      stat_reg       <= 0;
+      stat_reg_new   <= 0;
+    end else begin
+      mem_data_valid <= 0;
+      stat_reg_new   <= 0;
+
+      case (fetch_state)
+        /**************************
+        *    FETCH STATUS PHASE   *
+        **************************/
+        FETCH_STATUS_A:
+        begin
+          axi_arvalid <= 1;
+          axi_araddr  <= stat_reg_addr;
+          fetch_state <= FETCH_STATUS_B;
+        end
+        FETCH_STATUS_B:
+        begin
+          if (axi_arready) begin
+            axi_arvalid <= 0;
+            axi_rready  <= 1;
+            fetch_state <= FETCH_DATA_A;
+          end
+        end
+        /**************************
+        *     FETCH DATA PHASE    *
+        **************************/
+        FETCH_DATA_A:
+        begin
+          if (axi_rvalid) begin
+            axi_rready    <= 0;
+            stat_reg      <= axi_rdata;
+            stat_reg_new  <= 1;
+
+            // axi_rdata[0:0] has the validity of rx-fifo data.
+            fetch_state   <=(axi_rdata[0]) ? FETCH_DATA_B : FETCH_STATUS_A;
+            axi_araddr    <=(axi_rdata[0]) ? rx_fifo_addr : stat_reg_addr ;
+            axi_arvalid   <=(axi_rdata[0]);
+          end
+        end
+        FETCH_DATA_B:
+        begin
+          if (axi_arready) begin
+            axi_arvalid <= 0;
+            axi_rready  <= 1;
+            fetch_state <= FETCH_ARRANGE_DATA;
+          end
+        end
+        /**************************
+        *   ARRANGE DATA PHASE    *
+        **************************/
+        FETCH_ARRANGE_DATA:
+        begin
+          if (axi_rvalid) begin
+            axi_rready    <= 0;
+
+            case (data_position)
+              2'b00  :begin mem_data_reg[ 7: 0]<=axi_rdata[7:0];mem_data_valid<=0;end
+              2'b01  :begin mem_data_reg[15: 8]<=axi_rdata[7:0];mem_data_valid<=0;end
+              2'b10  :begin mem_data_reg[23:16]<=axi_rdata[7:0];mem_data_valid<=0;end
+              2'b11  :begin mem_data_reg[31:24]<=axi_rdata[7:0];mem_data_valid<=1;end
+              default:begin mem_data_reg[ 7: 0]<=axi_rdata[7:0];mem_data_valid<=0;end
+            endcase
+
+            data_position <= data_position + 1;
+            fetch_state   <= FETCH_STATUS_A;
+          end
+        end
+        /*******************
+        * unexpected value *
+        *******************/
+        default:
+        begin
+          fetch_state <= FETCH_STATUS_A;
         end
       endcase
     end
   end
 endmodule
 
+module io_data_store #(
+  parameter INIT_POINTER = 0,
+  parameter HIGH_POINTER =10
+) (
+  input wire [`WORD_W-1:0] mem_data_reg,
+  input wire               mem_data_valid,
+  output reg [`ADDR_W-1:0] prod_pointer,
+  output reg [`ADDR_W-1:0] mem_addr,
+  output reg [`WORD_W-1:0] mem_data,
+  output reg               mem_we,
+  input wire               clk,
+  input wire               rstn
+);
+  enum {STORE_A, STORE_B, STORE_C} store_state;
 
-module in_module
-  #(parameter INIT_POINTER=0,
-    parameter HIGH_POINTER=10)
-   (
-    output reg  in_module_busy,
-    input wire  interrupt,
-
-    output reg  [`ADDR_W-1:0] producer_pointer,
-    output reg  [`WORD_W-1:0] mem_data,
-    output reg  [`ADDR_W-1:0] mem_addr,
-    output reg                mem_we,
-
-    input wire        axi_arready,
-    input wire        axi_rvalid,
-    input wire [31:0] axi_rdata,
-
-    output reg        in_axi_arvalid,
-    output reg        in_axi_rready,
-    output reg [31:0] in_axi_araddr,
-
-    input wire clk,
-    input wire rstn);
-
-  reg [3:0]  in_state;
-  localparam in_wait           = 4'd1;
-  localparam in_read_status_a  = 4'd2;
-  localparam in_read_status_b  = 4'd3;
-  localparam in_read_status_c  = 4'd4;
-  localparam in_check_status   = 4'd5;
-  localparam in_read_data_a    = 4'd6;
-  localparam in_read_data_b    = 4'd7;
-  localparam in_mem_access     = 4'd8;
-  localparam in_pointer_update = 4'd9;
-
-  reg rx_data_valid;
-
-  assign in_module_busy = ~(in_state==in_wait||in_state==in_pointer_update);
-
-  always @(posedge clk)
-  begin
+  always @(posedge clk) begin
     if (~rstn) begin
-      in_state         <= in_wait;
-      in_axi_arvalid   <= 0;
-      in_axi_rready    <= 0;
-      in_axi_araddr    <= 0;
-      mem_data         <= 0;
-      mem_addr         <= 0;
-      mem_we           <= 0;
-      producer_pointer <= INIT_POINTER;
+      store_state  <= STORE_A;
+      prod_pointer <= INIT_POINTER;
+      mem_data     <= 0;
+      mem_addr     <= 0;
+      mem_we       <= 0;
     end else begin
-      case (in_state)
-        /**************************
-        *        WAIT PHASE       *
-        **************************/
-        in_wait:
+      // わざわざステートマシンにしているのは
+      // ポインタの更新を少し遅らせるため
+      case (store_state)
+        STORE_A:
         begin
-          in_state <=(interrupt)                      ? in_wait :
-                     (producer_pointer==HIGH_POINTER) ? in_wait : in_read_status_a;
-        end
-        /**************************
-        *    READ STATUS PHASE    *
-        **************************/
-        in_read_status_a:
-        begin
-          in_axi_arvalid <= 1;
-          in_axi_araddr  <= 8;
-          in_state       <= in_read_status_b;
-        end
-        in_read_status_b:
-        begin
-          if (axi_arready) begin
-            in_axi_arvalid <= 0;
-            in_axi_rready  <= 1;
-            in_state       <= in_read_status_c;
+          if (mem_data_valid) begin
+            mem_data    <= mem_data_reg;
+            mem_addr    <= prod_pointer;
+            mem_we      <= 1;
+            store_state <= STORE_B;
           end
         end
-        in_read_status_c:
+        STORE_B:
         begin
-          if (axi_rvalid) begin
-            in_axi_rready <= 0;
-            rx_data_valid <= axi_rdata[0:0];
-            in_state      <= in_check_status;
+          mem_we      <= 0;
+          store_state <= STORE_C;
+        end
+        STORE_C:
+        begin
+          if (prod_pointer<HIGH_POINTER) begin
+            prod_pointer  <= prod_pointer + 1;
+            store_state   <= STORE_A;
           end
         end
-        /**************************
-        *   CHECK STATUS PHASE    *
-        **************************/
-        in_check_status:
-        begin
-          in_state  <=(rx_data_valid) ? in_read_data_a : in_wait;
-        end
-        /**************************
-        *     READ DATA PHASE     *
-        **************************/
-        in_read_data_a:
-        begin
-          in_axi_arvalid <= 1;
-          in_axi_araddr  <= 0;
-          in_state       <= in_read_data_b;
-        end
-        in_read_data_b:
-        begin
-          if (axi_arready) begin
-            in_axi_arvalid <= 0;
-            in_axi_rready  <= 1;
-            in_state       <= in_mem_access;
-          end
-        end
-        /**************************
-        *   MEMORY ACCESS PHASE   *
-        **************************/
-        in_mem_access:
-        begin
-          if (axi_rvalid) begin
-            in_axi_rready <= 0;            
-            mem_data      <= axi_rdata;
-            mem_addr      <= producer_pointer;
-            mem_we        <= 1;
-            in_state      <= in_pointer_update;
-          end
-        end
-        /**************************
-        *  POINTER UPDATE PHASE   *
-        **************************/
-        in_pointer_update:
-        begin
-          producer_pointer  <= producer_pointer+1;
-          mem_we            <= 0;
-          in_state          <= in_wait;
+        default: begin
+          store_state <= STORE_A;
         end
       endcase
     end

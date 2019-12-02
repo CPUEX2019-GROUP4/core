@@ -1,8 +1,10 @@
+`default_nettype none
+
 module fadd (
-    input wire [31:0] x1,
-    input wire [31:0] x2,
-    output reg [31:0] y
-  );
+  input  wire [31:0] x1,
+  input  wire [31:0] x2,
+  output wire [31:0] y
+);
 
   // 1
   wire        s1 = x1[31];
@@ -127,3 +129,5 @@ module fadd (
       : {sy, ey, my})))));
 
 endmodule
+
+`default_nettype wire

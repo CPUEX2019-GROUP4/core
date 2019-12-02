@@ -1,7 +1,9 @@
+`default_nettype none
+
 module fclt (
-  input wire [31:0] x1,
-  input wire [31:0] x2,
-  output wire y
+  input  wire [31:0] x1,
+  input  wire [31:0] x2,
+  output wire        y
 );
 
   wire         s1 = x1[31];
@@ -15,3 +17,5 @@ module fclt (
       && ((s1 && ~s2) || (s1 && s2 && em1 > em2) || (~s1 && ~s2 && em1 < em2));
 
 endmodule
+
+`default_nettype wire

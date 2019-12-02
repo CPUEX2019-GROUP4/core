@@ -1,7 +1,9 @@
+`default_nettype none
+
 module fmul (
-  input wire [31:0] x1,
-  input wire [31:0] x2,
-  output reg [31:0] y
+  input  wire [31:0] x1,
+  input  wire [31:0] x2,
+  output wire [31:0] y
 );
 
   // 浮動小数を分解
@@ -30,3 +32,5 @@ module fmul (
   assign y[30:0] = ((e1 == 8'b0) || (e2 == 8'b0)) ? 31'b0 : {elast, mlast};
 
 endmodule
+
+`default_nettype wire
